@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Super Mario Canvas Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <style>
+    body { background: #7ec0ee; margin:0; font-family:sans-serif; display:flex; flex-direction:column; align-items:center;}
+    h1 {margin-top:1em;}
+    #gameArea { margin: 20px auto; background: #80e070; border:4px solid #444; display:block; box-shadow:0 8px 32px #2226; }
+    .uibar { margin:0 0 10px 0; text-align:center;}
+    .uibar span { display:inline-block; margin:0 12px; font-weight:bold;}
+  </style>
+</head>
+<body>
+  <h1>Super Mario - Canvas Edition</h1>
+  <div class="uibar">
+    <span id="score">Score: 0</span>
+    <span id="msg"></span>
+  </div>
+  <canvas id="gameArea" width="900" height="400"></canvas>
+  <script>
+/* ------- Constants --------- */
+const GRAVITY = 0.6, JUMP_STRENGTH = -11, MOVE_SPEED = 4.3, BULLET_SPEED = 8, GROUND_LEVEL = 330;
+const GAME_W = 900, GAME_H = 400, MARIO_W=40, MARIO_H=49, OBSTACLE_W=40, OBSTACLE_H=40, ENEMY_W=36, ENEMY_H=35, FLAG_W=34, FLAG_H=58, MAX_OBSTACLES = 8;
+const KEY_LEFT = 37, KEY_RIGHT = 39, KEY_JUMP = 32, KEY_SHOOT = 90; // Space:jump, Z:shoot
+
+/* -------- Assetless Mario & Objects ---------- */
+function drawMario(ctx, x, y, dir='r') {
+  ctx.save(); ctx.translate(x, y-MARIO_H);
+  if (dir==='l') ctx.scale(-1,1);
+  ctx.fillStyle="#f55"; ctx.fillRect(-14, 10, 28, 19); // body
+  ctx.fillStyle="#fd6"; ctx.beginPath(); ctx.arc(0, 5, 13, 0, 2*Math.PI); ctx.fill(); // head
+  ctx.fillStyle="#579"; ctx.fillRect(-16, 14, 8, 13); // leg L
+  ctx.fillRect(8, 14, 8, 13); // leg R
+  ctx.fillStyle="#fff"; ctx.fillRect(10,-4,7,8); // hat front
+  ctx.fillStyle="#d22"; ctx.fillRect(-12,-10,24,10); // hat
+  ctx.fillRect(-3,-17,6,9);
+  ctx.fillStyle="#333"; ctx.fillRect(-6,19,12,8); // belt
+  ctx.restore();
+}
+function drawBullet(ctx, x, y) {
+  ctx.save(); ctx.translate(x, y); ctx.fillStyle="#fc3";
+  ctx.beginPath(); ctx.ellipse(0,0,7,3,0,0,2*Math.PI); ctx.fill();
+  ctx.strokeStyle="#982"; ctx.stroke();
+  ctx.restore();
+}
+function drawBlock(ctx, x, y) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle="#964B00"; ctx.fillRect(0,0,OBSTACLE_W,OBSTACLE_H);
+  ctx.fillStyle="#ecbc7c"; ctx.fillRect(4,4,OBSTACLE_W-8,OBSTACLE_H-8);
+  ctx.restore();
+}
+function drawEnemy(ctx, x, y) {
+  ctx.save(); ctx.translate(x, y-ENEMY_H);
+  ctx.fillStyle="#438"; ctx.beginPath(); ctx.ellipse(18,24,14,14,0,0,2*Math.PI); ctx.fill();
+  ctx.fillStyle="#b05"; ctx.fillRect(7,13,22,15);
+  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(14,26,4,0,2*Math.PI); ctx.arc(24,26,4,0,2*Math.PI); ctx.fill();
+  ctx.fillStyle="#000"; ctx.beginPath(); ctx.arc(14,27,2,0,2*Math.PI); ctx.arc(24,27,2,0,2*Math.PI); ctx.fill();
+  ctx.restore();
+}
+function drawFlag(ctx,x,y) {
+  ctx.save(); ctx.translate(x, y-FLAG_H);
+  ctx.fillStyle="#aaa"; ctx.fillRect(13,0,8,FLAG_H);
+  ctx.fillStyle="#e11"; ctx.beginPath(); ctx.moveTo(21,10); ctx.lineTo(34,18); ctx.lineTo(21,26); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+/* -- Game State -- */
+let mario = {x:70,y:GROUND_LEVEL,hvel:0,vvel:0,dir:'r',onGround:true,canJump:true,alive:true, shooting:false, shotCd:0, score:0};
+let bullets = [], obstacles = [], enemies = [], key = {}, flag = {x:800,y:GROUND_LEVEL}, gameOver=false, won=false;
+function randBetween(a,b) { return Math.random()*(b-a)+a; }
+/* ---- Init Level ---- */
+function randomizeLevel() {
+  obstacles = [];
+  let used = [];
+  for (let i=0;i<MAX_OBSTACLES;++i) {
+    let x = Math.floor(randBetween(130, GAME_W-OBSTACLE_W-120));
+    if (used.some(u=>Math.abs(u-x)<70)) continue;
+    let y = GROUND_LEVEL;
+    if (Math.random()<0.4) y = GROUND_LEVEL - OBSTACLE_H - Math.floor(Math.random()*65);
+    obstacles.push({x,y});
+    used.push(x);
+  }
+  enemies = [];
+  for (let j=0;j<3+Math.floor(Math.random()*2);++j) {
+    let x = Math.floor(randBetween(270, GAME_W-ENEMY_W-70));
+    let y = GROUND_LEVEL;
+    enemies.push({x,y,dx:Math.random()<0.5?1:-1,seed:Math.random()>0.5});
+  }
+  flag = {x:randBetween(GAME_W-130, GAME_W-45), y:GROUND_LEVEL};
+}
+
+/* ---- Key Logic ---- */
+window.addEventListener('keydown',(e)=>{
+  key[e.keyCode] = 1;
+});
+window.addEventListener('keyup',(e)=>{
+  key[e.keyCode] = 0;
+});
+/* ------- Game Loop --------- */
+const canvas = document.getElementById('gameArea');
+const ctx = canvas.getContext('2d');
+function softCollide(x1,y1,w1,h1, x2,y2,w2,h2) {
+  return !(x1+w1<x2 || x1>x2+w2 || y1+h1<y2 || y1>y2+h2);
+}
+function updateMario() {
+  if (!mario.alive) return;
+  // Move
+  let mv = 0;
+  if (key[KEY_LEFT]) { mv -= MOVE_SPEED; mario.dir='l'; }
+  if (key[KEY_RIGHT]) { mv += MOVE_SPEED; mario.dir='r'; }
+  mario.x += mv;
+  if (mario.x<0) mario.x=0;
+  if (mario.x>GAME_W-MARIO_W) mario.x=GAME_W-MARIO_W;
+  // Jump
+  if (key[KEY_JUMP] && mario.canJump && mario.onGround) {
+    mario.vvel = JUMP_STRENGTH; mario.canJump = false; mario.onGround = false;
+  }
+  if (!key[KEY_JUMP] && !mario.canJump && mario.vvel<0) mario.canJump = true;
+  // Apply Gravity
+  mario.y += mario.vvel;
+  mario.vvel += GRAVITY;
+  // Ground and obstacles
+  mario.onGround = false;
+  if (mario.y >= GROUND_LEVEL) {
+    mario.y = GROUND_LEVEL; mario.vvel=0; mario.onGround=true;
+  }
+  // Collisions with obstacles
+  for (let ob of obstacles) {
+    if (softCollide(mario.x,mario.y,MARIO_W,MARIO_H, ob.x,ob.y,OBSTACLE_W,OBSTACLE_H)) {
+      if (mario.y+MARIO_H-10 < ob.y+6) { // landed on top
+        mario.y = ob.y-MARIO_H; mario.vvel=0; mario.onGround=true;
+      } else { // from side or bottom
+        if (mario.x < ob.x) mario.x = ob.x-MARIO_W;
+        else mario.x = ob.x+OBSTACLE_W;
+      }
+    }
+  }
+  // Shoot gun
+  if (key[KEY_SHOOT] && mario.shotCd<=0) {
+    bullets.push({x:mario.x+(mario.dir==='r'?MARIO_W:0), y:mario.y+18, dx:mario.dir==='r'?BULLET_SPEED:-BULLET_SPEED});
+    mario.shotCd=11;
+  }
+  mario.shotCd--;
+}
+function updateBullets() {
+  bullets.forEach((b,i)=>{
+    b.x+=b.dx;
+    // Remove bullets outside or that hit obstacle
+    if (b.x>GAME_W||b.x<0) bullets[i]=null;
+    // Hit enemy
+    enemies.forEach((enm,j)=>{
+      if (enm && softCollide(b.x,b.y,14,7, enm.x,enm.y,ENEMY_W,ENEMY_H)) {
+        bullets[i]=null; enemies[j]=null; mario.score+=70;
+      }
+    });
+    // Hit block
+    obstacles.forEach((ob,idx)=>{
+      if (ob && softCollide(b.x,b.y,14,7, ob.x,ob.y,OBSTACLE_W,OBSTACLE_H)) bullets[i]=null;
+    });
+  });
+  bullets = bullets.filter(b=>b);
+}
+function updateEnemies() {
+  enemies.forEach(enm=>{
+    if (!enm) return;
+    if (enm.seed) enm.x += 1.7*(Math.sin(Date.now()/400+(enm.x/8)));
+    else enm.x += enm.dx*1.1;
+    if (enm.x<40||enm.x>GAME_W-ENEMY_W-12) enm.dx*=-1;
+  });
+  enemies = enemies.filter(e=>e);
+}
+function marioHitEnemy() {
+  for (let enm of enemies) {
+    if (enm && softCollide(mario.x,mario.y,MARIO_W,MARIO_H, enm.x,enm.y,ENEMY_W,ENEMY_H)) return true;
+  }
+  return false;
+}
+function checkWin() {
+  if (softCollide(mario.x,mario.y,MARIO_W,MARIO_H, flag.x,flag.y,FLAG_W,FLAG_H)) {
+    won = true;
+    gameOver = true;
+    document.getElementById('msg').textContent = "You reached the flag! Press R to restart.";
+  }
+}
+function drawAll() {
+  ctx.clearRect(0,0,GAME_W,GAME_H);
+  // Background
+  ctx.fillStyle="#80e070"; ctx.fillRect(0,330,GAME_W, GAME_H-330); // ground
+  // Obstacles
+  obstacles.forEach(ob=>drawBlock(ctx,ob.x,ob.y));
+  // Flag
+  drawFlag(ctx, flag.x, flag.y);
+  // Enemies
+  enemies.forEach(enm=>enm&&drawEnemy(ctx,enm.x,enm.y));
+  // Bullets
+  bullets.forEach(b=>drawBullet(ctx,b.x,b.y));
+  // Mario
+  if (mario.alive) drawMario(ctx, mario.x, mario.y, mario.dir);
+  ctx.fillStyle='#111';
+  ctx.font='17px sans-serif';
+  ctx.fillText(`Score: ${mario.score}`,GAME_W-135,24);
+}
+function updateScore() {
+  document.getElementById('score').textContent = "Score: "+mario.score;
+}
+function gameTick() {
+  if (gameOver) return;
+  updateMario();
+  updateBullets();
+  updateEnemies();
+  if (marioHitEnemy()) {
+    mario.alive=false; gameOver=true;
+    document.getElementById('msg').textContent = "Game Over! Press R to restart.";
+  }
+  checkWin();
+  updateScore();
+  drawAll();
+}
+function gameLoop() {
+  requestAnimationFrame(gameLoop);
+  gameTick();
+}
+function resetGame() {
+  mario = {x:70,y:GROUND_LEVEL,hvel:0,vvel:0,dir:'r',onGround:true,canJump:true,alive:true, shooting:false, shotCd:0, score:0};
+  bullets = [];
+  won=false; gameOver=false;
+  randomizeLevel();
+  document.getElementById('msg').textContent="";
+}
+window.onload = () => {
+  resetGame();
+  drawAll();
+  gameLoop();
+};
+window.addEventListener('keydown', function(e){
+  if ((gameOver || won) && e.key.toLowerCase()==='r') {
+    resetGame();
+  }
+});
+  </script>
+</body>
+</html>
