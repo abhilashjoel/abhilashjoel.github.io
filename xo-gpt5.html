@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tic‑Tac‑Toe — Clean UI</title>
+  <style>
+    :root{
+      --bg:#f6f7fb;--panel:#fff;--text:#111;--muted:#556;--accent:#4f46e5;
+      --cell-size:min(12vmin,80px);
+      --gap:12px;
+    }
+    [data-theme="dark"]{ --bg:#0b1020; --panel:#0f1724; --text:#e6eef8; --muted:#9aa6c0; --accent:#7c3aed; }
+
+    /* Theme skins (pencil, cartoon, 2d, 3d, space) */
+    .theme-pencil{ --cell-bg:linear-gradient(180deg,#fff 0%,#f2f2f2 100%); --cell-border:2px dashed #888; --x-color:#111; --o-color:#8b3b3b; }
+    .theme-cartoon{ --cell-bg:linear-gradient(180deg,#fff, #fffbeb); --cell-border:4px solid #ffd166; --x-color:#0b5fff; --o-color:#ff6b6b; }
+    .theme-2d{ --cell-bg:linear-gradient(180deg,#ffffff,#e6f0ff); --cell-border:2px solid #cbd5e1; --x-color:#0b3d91; --o-color:#c026d3; }
+    .theme-3d{ --cell-bg:linear-gradient(145deg,#fafafa,#e2e8f0); --cell-border:0; --x-color:#0f172a; --o-color:#0ea5a4; box-shadow: 0 6px 18px rgba(2,6,23,0.2); }
+    .theme-space{ --cell-bg:radial-gradient(circle at 10% 10%, #111428, #071029); --cell-border:1px solid rgba(255,255,255,0.06); --x-color:#7ae7ff; --o-color:#ffd86b; }
+
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:var(--bg); color:var(--text);}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{width:100%;max-width:980px;background:var(--panel);border-radius:14px;padding:18px;box-shadow:0 8px 30px rgba(2,6,23,0.08);display:grid;grid-template-columns:360px 1fr;gap:18px}
+
+    /* Left column - controls */
+    .controls{display:flex;flex-direction:column;gap:12px}
+    h1{font-size:20px;margin:0 0 6px 0}
+    .meta{font-size:13px;color:var(--muted)}
+
+    .row{display:flex;gap:10px;align-items:center}
+    select,input[type=checkbox],button{padding:8px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);background:transparent;font-size:14px}
+    .switch{margin-left:auto}
+    .modes{display:flex;gap:8px}
+    .modes button{flex:1}
+
+    /* Board area */
+    .board-wrap{display:flex;flex-direction:column;gap:12px;padding:12px}
+    .board{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(255,255,255,0.4));align-self:center}
+    .cell{width:var(--cell-size);height:var(--cell-size);display:flex;align-items:center;justify-content:center;font-size:clamp(28px,7vmin,56px);cursor:pointer;border-radius:10px;user-select:none;position:relative}
+    .cell[data-empty="true"]{opacity:0.95}
+    .cell .mark{font-weight:700}
+    .cell[data-x]{color:var(--x-color)}
+    .cell[data-o]{color:var(--o-color)}
+    .controls-panel{display:flex;gap:8px;flex-wrap:wrap}
+
+    /* footer scores */
+    .scores{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .score-pill{background:rgba(0,0,0,0.04);padding:8px 12px;border-radius:999px;font-weight:600}
+
+    /* small helpers */
+    .hint{outline:3px solid rgba(255,200,0,0.12)}
+    .win{box-shadow:0 6px 18px rgba(0,0,0,0.12);transform:scale(1.02)}
+
+    /* responsive */
+    @media (max-width:880px){.card{grid-template-columns:1fr;}}
+
+    /* theme cell styling applied on board root */
+    .board-root{--cell-bg:var(--cell-bg, #fff);--cell-border:var(--cell-border, 2px solid #e6e9f2)}
+    .board-root .cell{background:var(--cell-bg);border:var(--cell-border);display:flex;align-items:center;justify-content:center}
+
+    /* mobile tweaks */
+    @media (max-width:420px){.card{padding:12px}.wrap{padding:10px}.controls{gap:8px}}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card theme-2d" id="app">
+      <div class="controls">
+        <div>
+          <h1>Tic‑Tac‑Toe</h1>
+          <div class="meta">Clean responsive UI · Local scores · 5 themes · Undo · Hints · AI difficulties</div>
+        </div>
+
+        <div class="row">
+          <label>Mode</label>
+          <div class="modes" style="flex:1">
+            <button id="mode-hh">Human vs Human</button>
+            <button id="mode-ai">Human vs AI</button>
+          </div>
+        </div>
+
+        <div class="row" id="ai-controls" style="display:none">
+          <label>AI Difficulty</label>
+          <select id="ai-diff" style="flex:1">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>Theme</label>
+          <select id="theme" style="flex:1">
+            <option value="pencil">Pencil Sketch</option>
+            <option value="cartoon">Cartoon</option>
+            <option value="2d" selected>2D</option>
+            <option value="3d">3D</option>
+            <option value="space">Space</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>Light / Dark</label>
+          <div class="switch" style="margin-left:auto">
+            <button id="toggle-theme">Toggle</button>
+          </div>
+        </div>
+
+        <div class="controls-panel">
+          <button id="new-game">New Game</button>
+          <button id="undo">Undo</button>
+          <button id="hint">Hint</button>
+          <button id="reset-scores">Reset Scores</button>
+        </div>
+
+        <div style="margin-top:8px">
+          <div class="meta">Scores (saved in browser):</div>
+          <div class="scores" id="scores"></div>
+        </div>
+
+        <div style="margin-top:auto;font-size:13px;color:var(--muted)">Tips: Use Undo to revert moves. Hint shows best next move. In hard AI, the computer plays perfectly.</div>
+      </div>
+
+      <div class="board-wrap">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div><strong id="status">X to move</strong><div class="meta" id="substatus">Mode: Human vs AI — Easy</div></div>
+          <div class="meta">Last games: <span id="recent-count">0</span></div>
+        </div>
+
+        <div class="board board-root theme-2d" id="board" aria-label="tic tac toe board">
+          <!-- 9 cells generated by JS -->
+        </div>
+
+        <div style="display:flex;justify-content:center;gap:8px;margin-top:6px">
+          <button id="share">Share Result</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+<script>
+// Single-file tic-tac-toe
+const app = document.getElementById('app');
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const substatusEl = document.getElementById('substatus');
+const scoresEl = document.getElementById('scores');
+const recentCountEl = document.getElementById('recent-count');
+
+let mode = 'ai'; // 'hh' or 'ai'
+let aiDiff = 'easy';
+let current = 'X';
+let board = Array(9).fill(null);
+let history = []; // stack of {board, current}
+let scores = {X:0,O:0,draw:0, games:[]};
+let dark = false;
+let theme = '2d';
+
+// init cells
+for(let i=0;i<9;i++){
+  const c = document.createElement('button');
+  c.className='cell';
+  c.dataset.index = i;
+  c.dataset.empty = 'true';
+  c.addEventListener('click', ()=>onCellClick(i));
+  c.innerHTML = '<span class="mark"></span>';
+  boardEl.appendChild(c);
+}
+
+// controls
+document.getElementById('mode-hh').addEventListener('click', ()=>setMode('hh'));
+document.getElementById('mode-ai').addEventListener('click', ()=>setMode('ai'));
+document.getElementById('ai-diff').addEventListener('change', (e)=>{aiDiff=e.target.value; updateSub();});
+
+document.getElementById('theme').addEventListener('change', (e)=>setTheme(e.target.value));
+document.getElementById('toggle-theme').addEventListener('click', ()=>{dark=!dark; document.documentElement.setAttribute('data-theme', dark?'dark':'light');});
+
+document.getElementById('new-game').addEventListener('click', ()=>startNewGame());
+document.getElementById('undo').addEventListener('click', ()=>undoMove());
+document.getElementById('hint').addEventListener('click', ()=>showHint());
+document.getElementById('reset-scores').addEventListener('click', ()=>{if(confirm('Reset scores?')){scores={X:0,O:0,draw:0,games:[]}; saveScores(); updateScores();}});
+
+document.getElementById('share').addEventListener('click', ()=>{navigator.share?.({title:'Tic-Tac-Toe score',text:JSON.stringify(scores)})});
+
+function setMode(m){mode = m; document.getElementById('ai-controls').style.display = (m==='ai')?'flex':'none'; updateSub(); startNewGame();}
+function setTheme(t){theme=t; app.classList.remove('theme-pencil','theme-cartoon','theme-2d','theme-3d','theme-space'); app.classList.add('theme-'+t); boardEl.classList.remove('theme-pencil','theme-cartoon','theme-2d','theme-3d','theme-space'); boardEl.classList.add('theme-'+t);} 
+
+function updateSub(){ substatusEl.textContent = `Mode: ${mode==='hh'?'Human vs Human':'Human vs AI'}${mode==='ai'?(' — '+capitalize(aiDiff)) : ''}` }
+function capitalize(s){return s.charAt(0).toUpperCase()+s.slice(1)}
+
+function startNewGame(){ board = Array(9).fill(null); current='X'; history=[]; render(); updateStatus(); }
+
+function onCellClick(i){ if(board[i] || checkWinner(board)) return; pushHistory(); makeMove(i,current); render(); const winner = checkWinner(board); if(winner){onGameEnd(winner);} else {toggleTurn(); if(mode==='ai' && current==='O'){aiPlay();}}}
+
+function pushHistory(){ history.push({board:board.slice(), current}); if(history.length>50) history.shift(); }
+function undoMove(){ if(history.length===0) return; const prev = history.pop(); board = prev.board; current = prev.current; clearHints(); render(); updateStatus(); }
+
+function makeMove(i,player){ board[i]=player; }
+function toggleTurn(){ current = current==='X'?'O':'X'; updateStatus(); }
+
+function updateStatus(){ const w = checkWinner(board); if(w){ if(w==='draw'){statusEl.textContent='Draw';} else {statusEl.textContent = w + ' wins!';} } else { statusEl.textContent = current + ' to move'; } substatusEl.textContent = `Mode: ${mode==='hh'?'Human vs Human':'Human vs AI'}${mode==='ai'?' — '+capitalize(aiDiff):''}` }
+
+function render(){ for(let i=0;i<9;i++){ const c = boardEl.children[i]; const val = board[i]; c.dataset.empty = val? 'false':'true'; c.removeAttribute('data-x'); c.removeAttribute('data-o'); c.classList.remove('win'); c.classList.remove('hint'); c.querySelector('.mark').textContent = val||''; if(val){ c.setAttribute(val==='X'?'data-x':'data-o',''); } }
+  // highlight winning line
+  const w = checkWinner(board);
+  if(w && w!=='draw'){ const line = winningLine(board); if(line){ line.forEach(i=>boardEl.children[i].classList.add('win')); } }
+}
+
+// scoring and storage
+function loadScores(){ const raw = localStorage.getItem('ttt_scores_v1'); if(raw) scores = JSON.parse(raw); else scores = {X:0,O:0,draw:0,games:[]}; updateScores(); }
+function saveScores(){ localStorage.setItem('ttt_scores_v1', JSON.stringify(scores)); updateScores(); }
+function updateScores(){ scoresEl.innerHTML = '';
+  scoresEl.appendChild(makePill('X: '+scores.X));
+  scoresEl.appendChild(makePill('O: '+scores.O));
+  scoresEl.appendChild(makePill('Draws: '+scores.draw));
+  recentCountEl.textContent = scores.games.length;
+}
+function makePill(txt){ const d = document.createElement('div'); d.className='score-pill'; d.textContent=txt; return d }
+
+function onGameEnd(winner){ // save
+  scores.games.unshift({when:Date.now(), winner: winner}); if(scores.games.length>20) scores.games.pop(); if(winner==='draw') scores.draw++; else scores[winner]++; saveScores(); render(); updateStatus(); }
+
+// utilities: winner detection
+const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+function checkWinner(b){ for(const l of lines){ const [a,c,d]=l; if(b[a] && b[a]===b[c] && b[a]===b[d]) return b[a]; } if(b.every(Boolean)) return 'draw'; return null; }
+function winningLine(b){ for(const l of lines){ const [a,c,d]=l; if(b[a] && b[a]===b[c] && b[a]===b[d]) return l; } return null }
+
+// AI: different difficulty behaviors. We'll implement perfect minimax for hard.
+function aiPlay(){ if(checkWinner(board)) return;
+  const move = chooseAIMove(board,'O'); pushHistory(); makeMove(move,'O'); render(); const w = checkWinner(board); if(w){ onGameEnd(w); } else { current='X'; updateStatus(); }
+}
+
+function chooseAIMove(b,aiSymbol){
+  const avail = b.map((v,i)=>v?null:i).filter(v=>v!==null);
+  if(aiDiff==='easy'){
+    // easy: pick best move with 20% chance, otherwise pick randomly or intentionally play a poor move
+    if(Math.random()<0.2){ return minimaxRoot(b,aiSymbol).index; }
+    // try random or pick next-worst
+    return randomChoice(avail);
+  } else if(aiDiff==='medium'){
+    // medium: mostly good, sometimes suboptimal -> optimal 70% of time
+    if(Math.random()<0.7) return minimaxRoot(b,aiSymbol).index;
+    return randomChoice(avail);
+  } else {
+    // hard: perfect play
+    return minimaxRoot(b,aiSymbol).index;
+  }
+}
+
+function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+// Minimax implementation: returns {index,score}
+function minimaxRoot(newBoard,player){
+  const avail = newBoard.map((v,i)=>v?null:i).filter(v=>v!==null);
+  let bestMove = -1; let bestScore = -Infinity;
+  for(const i of avail){ const boardCopy = newBoard.slice(); boardCopy[i]=player; const score = minimax(boardCopy, false, player); if(score>bestScore){ bestScore = score; bestMove=i; } }
+  return {index:bestMove, score:bestScore};
+}
+
+function minimax(boardState,isMaximizing,player){ const opp = player==='X'?'O':'X'; const winner = checkWinner(boardState); if(winner){ if(winner==='draw') return 0; return (winner===player)?10:-10; }
+  const avail = boardState.map((v,i)=>v?null:i).filter(v=>v!==null);
+  if(isMaximizing){ let best=-Infinity; for(const i of avail){ const b = boardState.slice(); b[i]=player; const score = minimax(b,false,player); best = Math.max(score,best); } return best; } else { let best=Infinity; for(const i of avail){ const b = boardState.slice(); b[i]=opp; const score = minimax(b,true,player); best = Math.min(score,best); } return best; }
+}
+
+// Hint: compute best move for current player and highlight
+let hintTimeout=null;
+function showHint(){ clearHints(); if(checkWinner(board)) return; const player = current; const best = minimaxRoot(board, player); if(best.index==null) return; boardEl.children[best.index].classList.add('hint'); hintTimeout = setTimeout(()=>clearHints(),2500); }
+function clearHints(){ if(hintTimeout) clearTimeout(hintTimeout); for(const c of boardEl.children) c.classList.remove('hint'); }
+
+// load & start
+loadScores(); setMode('ai'); setTheme('2d'); startNewGame();
+
+// expose some helpers for keyboard/play
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='u') undoMove();
+  if(e.key==='h') showHint();
+});
+
+</script>
+</body>
+</html>
